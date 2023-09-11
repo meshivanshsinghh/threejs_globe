@@ -1,0 +1,21 @@
+{
+  "type": "Map",
+  "maps": [
+    {
+      "text": "IND",
+      "size": 1.0,
+      "country": "India",
+      "city": "Chennai",
+      "lat": "26.80455971369891",
+      "lng": "81.03890007595498"
+    },
+    {
+      "text": "USA",
+      "size": 1.0,
+      "country": "USA",
+      "city": "Miami",
+      "lat": "25.796318243932177",
+      "lng": "-80.19855940256282"
+    }
+  ]
+}
