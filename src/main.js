@@ -3,8 +3,6 @@ import * as THREE from "three";
 import ThreeGlobe from "three-globe";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import countries from "./assets/custom.geo.json";
-import lines from "./assets/lines.json";
-import map from "./assets/map.json";
 
 let renderer, camera, scene, controls;
 
@@ -14,10 +12,33 @@ let windowHalfX = window.innerWidth / 2;
 let windowHalfY = window.innerHeight / 2;
 let Globe;
 
-init();
-initGlobe();
-onWindowResize();
-animate();
+function generateArcsFromMap(mapData) {
+  const arcs = [];
+  for (let i = 0; i < mapData.maps.length; i++) {
+    for (let j = i + 1; j < mapData.maps.length; j++) {
+      const start = mapData.maps[i];
+      const end = mapData.maps[j];
+      arcs.push({
+        type: "pull",
+        from: start.text,
+        to: end.text,
+        startLat: start.lat,
+        startLng: start.lng,
+        endLat: end.lat,
+        endLng: end.lng,
+      });
+    }
+  }
+  return arcs;
+}
+
+window.initializeGlobeWithData = function(mapData) {
+  const generatedArcs = generateArcsFromMap(mapData);
+  init();
+  initGlobe(generatedArcs, mapData);
+  onWindowResize();
+  animate();
+}
 
 function init() {
   // renderer
@@ -76,7 +97,7 @@ function onMouseMove(event) {
   mouseY = event.clientY - windowHalfY;
 }
 
-function initGlobe() {
+function initGlobe(generatedArcs, mapData) {
   Globe = new ThreeGlobe({ waitForGlobeReady: true, animateIn: true })
     .hexPolygonsData(countries.features).hexPolygonColor(()=> "#ffffff")
     .hexPolygonResolution(3)
@@ -86,7 +107,7 @@ function initGlobe() {
     .atmosphereAltitude(0.30);
 
   setTimeout(() => {
-    Globe.arcsData(lines.pulls)
+    Globe.arcsData(generatedArcs)
       .arcColor(() => "#ffffff")
       .arcStroke(1.2)
       .arcDashLength(0.9)
@@ -94,14 +115,14 @@ function initGlobe() {
       .arcDashAnimateTime(1000)
       .arcsTransitionDuration(1000)
       .arcDashInitialGap(1)
-      .labelsData(map.maps)
+      .labelsData(mapData.maps)
       .labelColor(() => "#ffffff")
       .labelDotRadius(0.6)
       .labelSize(2)
       .labelText("city")
       .labelResolution(10)
       .labelAltitude(0.02)
-      .pointsData(map.maps)
+      .pointsData(mapData.maps)
       .pointColor(() => "#ffffff")
       .pointsMerge(true)
       .pointAltitude(0.08)
