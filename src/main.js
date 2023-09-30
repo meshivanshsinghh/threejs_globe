@@ -5,40 +5,12 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import countries from "./assets/custom.geo.json";
 
 let renderer, camera, scene, controls;
-
 let mouseX = 0;
 let mouseY = 0;
 let windowHalfX = window.innerWidth / 2;
 let windowHalfY = window.innerHeight / 2;
 let Globe;
-
-function generateArcsFromMap(mapData) {
-  const arcs = [];
-  for (let i = 0; i < mapData.maps.length; i++) {
-    for (let j = i + 1; j < mapData.maps.length; j++) {
-      const start = mapData.maps[i];
-      const end = mapData.maps[j];
-      arcs.push({
-        type: "pull",
-        from: start.text,
-        to: end.text,
-        startLat: start.lat,
-        startLng: start.lng,
-        endLat: end.lat,
-        endLng: end.lng,
-      });
-    }
-  }
-  return arcs;
-}
-
-window.initializeGlobeWithData = function(mapData) {
-  const generatedArcs = generateArcsFromMap(mapData);
-  init();
-  initGlobe(generatedArcs, mapData);
-  onWindowResize();
-  animate();
-}
+let currentArcIndex = 0;
 
 function init() {
   // renderer
@@ -97,17 +69,29 @@ function onMouseMove(event) {
   mouseY = event.clientY - windowHalfY;
 }
 
+function animateArcsSequentially(generatedArcs) {
+  if (currentArcIndex < generatedArcs.length - 1) {
+    setTimeout(() => {
+      currentArcIndex++;
+      Globe.arcsData([generatedArcs[currentArcIndex]]);
+      animateArcsSequentially(generatedArcs);
+    }, 1000); // Delay for 1 second
+  }
+}
+
+
 function initGlobe(generatedArcs, mapData) {
   Globe = new ThreeGlobe({ waitForGlobeReady: true, animateIn: true })
-    .hexPolygonsData(countries.features).hexPolygonColor(()=> "#ffffff")
-    .hexPolygonResolution(3)
-    .hexPolygonMargin(0.65)
-    .showAtmosphere(true)
-    .atmosphereColor("#cecece")
-    .atmosphereAltitude(0.30);
+      .hexPolygonsData(countries.features)
+      .hexPolygonColor(() => "#ffffff")
+      .hexPolygonResolution(3)
+      .hexPolygonMargin(0.65)
+      .showAtmosphere(true)
+      .atmosphereColor("#cecece")
+      .atmosphereAltitude(0.30);
 
-  setTimeout(() => {
-    Globe.arcsData(generatedArcs)
+  // Initial setting of arcs with just the first arc
+  Globe.arcsData([generatedArcs[currentArcIndex]])
       .arcColor(() => "#ffffff")
       .arcStroke(1.2)
       .arcDashLength(0.9)
@@ -128,8 +112,6 @@ function initGlobe(generatedArcs, mapData) {
       .pointAltitude(0.08)
       .pointRadius(0.1);
 
-  }, 1000);
-
   Globe.rotateY(-Math.PI * (5 / 9));
   Globe.rotateZ(-Math.PI / 6);
   const globeMaterial = Globe.globeMaterial();
@@ -139,6 +121,8 @@ function initGlobe(generatedArcs, mapData) {
   globeMaterial.shininess = 0.7;
 
   scene.add(Globe);
+
+  animateArcsSequentially(generatedArcs);
 }
 
 function animate() {
@@ -149,6 +133,7 @@ function animate() {
   camera.position.y += (-mouseY / 2 - camera.position.y) * 0.005;
   camera.lookAt(scene.position);
   controls.update();
+  controls.autoRotate = false;
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
@@ -158,4 +143,31 @@ function onWindowResize() {
   windowHalfX = window.innerWidth / 1.5;
   windowHalfY = window.innerHeight / 1.5;
   renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// flutter call
+window.updateGlobeFromFlutter = function(newDataString) {
+  const newData = JSON.parse(newDataString)
+  const generatedArcs = generateArcsFromMap(newData);
+  init();
+  initGlobe(generatedArcs, newData);
+  onWindowResize();
+  animate();
+}
+function generateArcsFromMap(mapData) {
+  const arcs = [];
+  for (let i = 0; i < mapData.maps.length - 1; i++) {
+    const start = mapData.maps[i];
+    const end = mapData.maps[i + 1];
+    arcs.push({
+      type: "pull",
+      from: start.text,
+      to: end.text,
+      startLat: parseFloat(start.lat),
+      startLng: parseFloat(start.lng),
+      endLat: parseFloat(end.lat),
+      endLng: parseFloat(end.lng),
+    });
+  }
+  return arcs;
 }
