@@ -2,158 +2,147 @@ import "./style.css";
 import * as THREE from "three";
 import ThreeGlobe from "three-globe";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import countries from "./assets/custom.geo.json";
+import image from "./earth_map.png"
+const IS_DEV = import.meta.env.VITE_NODE_ENV !== 'production';
 
-let renderer, camera, scene, controls;
-let mouseX = 0;
-let mouseY = 0;
-let windowHalfX = window.innerWidth / 2;
-let windowHalfY = window.innerHeight / 2;
-let Globe;
-let currentArcIndex = 0;
+let renderer, camera, scene, controls, Globe;
+const rayCaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const hitBoxMeshes = [];
+
+init();
+
+if(IS_DEV){
+ mockGlobeData();
+}
 
 function init() {
-  // renderer
+  setupRenderer();
+  setupScene();
+  setupCamera();
+  setupControls();
+  setupLights();
+  animate();
+}
+
+// call from flutter end
+window.updateGlobeFromFlutter = function(newDataString) {
+  try {
+    const newData = JSON.parse(newDataString);
+    const generatedArcs = generateArcsFromMap(newData);
+    initGlobe(generatedArcs, newData);
+  } catch (error) {
+    console.error("Failed to parse data from Flutter:", error);
+  }
+}
+
+
+function setupRenderer() {
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
-  // scene
+  renderer.domElement.addEventListener('mousedown', onMouseDown, false);
+  renderer.domElement.addEventListener('touchstart', onTouchStart, false);
+  window.addEventListener('resize', onWindowResize, false);
+}
+function setupScene() {
   scene = new THREE.Scene();
-  let ambientLight = new THREE.AmbientLight(0xbbbbbb, 0.3);
-  scene.add(ambientLight);
-  scene.background = new THREE.Color(0xFF5F5F5);
-
-  // camera
+  scene.background = new THREE.Color(0x215483);
+  scene.fog = new THREE.Fog(0x215483, 400, 2000);
+}
+function setupControls() {
+  controls = new OrbitControls(camera, renderer.domElement);
+  Object.assign(controls, {
+    enableDamping: true,
+    dynamicDampingFactor: 0.01,
+    enablePan: false,
+    minDistance: 200,
+    maxDistance: 800,
+    rotateSpeed: 0.8,
+    zoomSpeed: 1,
+    autoRotate: false,
+    minPolarAngle: Math.PI / 5,
+    maxPolarAngle: Math.PI - Math.PI / 3
+  });
+}
+function setupCamera() {
   camera = new THREE.PerspectiveCamera();
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+  camera.position.set(0, 0, 460);
 
-  let dLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  scene.add(camera);
+}
+function setupLights() {
+  const ambientLight = new THREE.AmbientLight(0xbbbbbb, 0.3);
+  scene.add(ambientLight);
+
+  const dLight = new THREE.DirectionalLight(0xffffff, 1);
   dLight.position.set(-800, 2000, 400);
   camera.add(dLight);
 
-  let dLight1 = new THREE.DirectionalLight(0x7982f6, 1);
+  const dLight1 = new THREE.DirectionalLight(0xffffff, 1);
   dLight1.position.set(-200, 500, 200);
   camera.add(dLight1);
-
-  camera.position.z = 400;
-  camera.position.x = 0;
-  camera.position.y = 0;
-
-  // modifying scene
-  scene.add(camera);
-  scene.fog = new THREE.Fog(0x535ef3, 400, 2000);
-
-  // controls
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dynamicDampingFactor = 0.01;
-  controls.enablePan = false;
-  controls.minDistance = 200;
-  controls.maxDistance = 500;
-  controls.rotateSpeed = 0.8;
-  controls.zoomSpeed = 1;
-  controls.autoRotate = false;
-  controls.minPolarAngle = Math.PI / 3.5;
-  controls.maxPolarAngle = Math.PI - Math.PI / 3;
-
-  // listener
-  window.addEventListener("resize", onWindowResize, false);
-  document.addEventListener("mousemove", onMouseMove);
 }
 
-function onMouseMove(event) {
-  mouseX = event.clientX - windowHalfX;
-  mouseY = event.clientY - windowHalfY;
+function latLngToXYZ(lat, lng, altitude = 0) {
+  const phi = (90 - lat) * (Math.PI / 180);
+  const theta = (lng + 180) * (Math.PI / 180);
+  const r = 100 + altitude;
+
+  const x = -r * Math.sin(phi) * Math.sin(theta);  // added negative sign
+  const y = r * Math.cos(phi);
+  const z = -r * Math.sin(phi) * Math.cos(theta);  // added negative sign
+
+  return { x, y, z };
 }
-
-function animateArcsSequentially(generatedArcs) {
-  if (currentArcIndex < generatedArcs.length - 1) {
-    setTimeout(() => {
-      currentArcIndex++;
-      Globe.arcsData([generatedArcs[currentArcIndex]]);
-      animateArcsSequentially(generatedArcs);
-    }, 1000); // Delay for 1 second
-  }
-}
-
-
 function initGlobe(generatedArcs, mapData) {
-  Globe = new ThreeGlobe({ waitForGlobeReady: true, animateIn: true })
-      .hexPolygonsData(countries.features)
-      .hexPolygonColor(() => "#ffffff")
-      .hexPolygonResolution(3)
-      .hexPolygonMargin(0.65)
-      .showAtmosphere(true)
-      .atmosphereColor("#cecece")
-      .atmosphereAltitude(0.30);
+  if (Globe) {
+    scene.remove(Globe);
+  }
 
-  // Initial setting of arcs with just the first arc
-  Globe.arcsData([generatedArcs[currentArcIndex]])
-      .arcColor(() => "#ffffff")
-      .arcStroke(1.2)
-      .arcDashLength(0.9)
-      .arcDashGap(4)
-      .arcDashAnimateTime(1000)
-      .arcsTransitionDuration(1000)
-      .arcDashInitialGap(1)
-      .labelsData(mapData.maps)
-      .labelColor(() => "#ffffff")
-      .labelDotRadius(0.6)
-      .labelSize(2)
-      .labelText("city")
-      .labelResolution(10)
-      .labelAltitude(0.02)
-      .pointsData(mapData.maps)
+  Globe = new ThreeGlobe({ waitForGlobeReady: true, animateIn: true })
+      .showAtmosphere(true).globeImageUrl(image)
+      .atmosphereColor("#215483")
+      .atmosphereAltitude(0.10);
+
+  Globe.pointsData(mapData.maps)
       .pointColor(() => "#ffffff")
       .pointsMerge(true)
-      .pointAltitude(0.08)
-      .pointRadius(0.1);
+      .pointAltitude(0.02)
+      .pointRadius(0.25);
 
-  Globe.rotateY(-Math.PI * (5 / 9));
-  Globe.rotateZ(-Math.PI / 6);
+  mapData.maps.forEach(point => {
+    const { x, y, z } = latLngToXYZ(point.lat, point.lng, 0.02); // altitude is set to 0.02
+    const hitBoxGeometry = new THREE.SphereGeometry(1.5);
+    const hitBoxMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 1, color: "red" });
+    const hitBoxMesh = new THREE.Mesh(hitBoxGeometry, hitBoxMaterial);
+    hitBoxMesh.dataID = point.id;
+    hitBoxMesh.position.set(x, y, z);
+    hitBoxMeshes.push(hitBoxMesh);
+  });
+
+  hitBoxMeshes.forEach(mesh => scene.add(mesh));
+
+  Globe.arcsData(generatedArcs)
+      .arcColor(() => "#ffffff")
+      .labelsData(mapData.maps)
+      .labelColor(() => "#ffffff")
+      .labelSize(0.7)
+      .labelResolution(1);
+
+  // Globe.rotateY(-Math.PI * (5 / 9));
+  // Globe.rotateZ(-Math.PI / 6);
+
   const globeMaterial = Globe.globeMaterial();
-  globeMaterial.color = new THREE.Color(0x0021ab8);
-  globeMaterial.emissive = new THREE.Color(0x0021ab8);
-  globeMaterial.emissiveIntensity = 0.1;
-  globeMaterial.shininess = 0.7;
-
+  globeMaterial.side = THREE.Color;
+  globeMaterial.needsUpdate = true;
   scene.add(Globe);
-
-  animateArcsSequentially(generatedArcs);
 }
 
-function animate() {
-  camera.position.x +=
-    Math.abs(mouseX) <= windowHalfX / 2
-      ? (mouseX / 2 - camera.position.x) * 0.005
-      : 0;
-  camera.position.y += (-mouseY / 2 - camera.position.y) * 0.005;
-  camera.lookAt(scene.position);
-  controls.update();
-  controls.autoRotate = false;
-  renderer.render(scene, camera);
-  requestAnimationFrame(animate);
-}
-function onWindowResize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  windowHalfX = window.innerWidth / 1.5;
-  windowHalfY = window.innerHeight / 1.5;
-  renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-// flutter call
-window.updateGlobeFromFlutter = function(newDataString) {
-  const newData = JSON.parse(newDataString)
-  const generatedArcs = generateArcsFromMap(newData);
-  init();
-  initGlobe(generatedArcs, newData);
-  onWindowResize();
-  animate();
-}
 function generateArcsFromMap(mapData) {
   const arcs = [];
   for (let i = 0; i < mapData.maps.length - 1; i++) {
@@ -167,7 +156,106 @@ function generateArcsFromMap(mapData) {
       startLng: parseFloat(start.lng),
       endLat: parseFloat(end.lat),
       endLng: parseFloat(end.lng),
+      color: start.color
     });
   }
   return arcs;
+}
+function animate() {
+  camera.lookAt(scene.position);
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+function onTouchStart(event){
+  event.preventDefault();
+  const intersectedObject = getIntersectedObject(event);
+  if(intersectedObject && intersectedObject.dataID){
+    console.log(`Touched ID: ${intersectedObject.dataID}`);
+  }
+}
+
+function onMouseDown(event) {
+  const intersectedObject = getIntersectedObject(event);
+  if(intersectedObject && intersectedObject.dataID){
+    console.log(`Clicked ID: ${intersectedObject.dataID}`);
+  }
+}
+
+function getIntersectedObject(event) {
+  let x, y;
+  const rect = renderer.domElement.getBoundingClientRect();
+
+  if(event.touches){
+    x = event.touches[0].clientX - rect.left;
+    y = event.touches[0].clientY - rect.top;
+  }else {
+    x = event.clientX - rect.left;
+    y = event.clientY - rect.top;
+  }
+
+  mouse.x = (x / rect.width) * 2 - 1;
+  mouse.y = -(y / rect.height) * 2 + 1;
+  rayCaster.setFromCamera(mouse,camera);
+  const intersects = rayCaster.intersectObjects(hitBoxMeshes, true);
+  if(intersects.length > 0){
+    return intersects[0].object;
+  }
+  return null;
+}
+function mockGlobeData() {
+  const mockData = JSON.stringify({
+    type: "Map",
+    maps: [
+      {
+        id:"berlin",
+        text: "Berlin MD, USA",
+        size: 1.0,
+        city: "Berlin MD, USA",
+        lat: 38.3226153,
+        lng: -75.2176892
+      },
+      {
+        id:"spain",
+        text: "Benidorm Spain",
+        size: 1.0,
+        city: "Benidorm Spain",
+        lat: 38.5411928,
+        lng: -0.1233831
+      },
+      {
+        id:"burma",
+        text: "He Hoe Myanmar (Burma)",
+        size: 1.0,
+        city: "He Hoe Myanmar (Burma)",
+        lat: 20.723192,
+        lng: 96.82170169999999
+      },
+      {
+        id:"italy",
+        text: "Lucca Province of Lucca, Italy",
+        size: 1.0,
+        city: "Lucca Province of Lucca, Italy",
+        lat: 43.8429197,
+        lng: 10.5026977
+      },
+      {
+        id:"india",
+        text: "Shivamogga Karnataka, India",
+        size: 1.0,
+        city: "Shivamogga Karnataka, India",
+        lat: 13.9299299,
+        lng: 75.568101
+      }
+  ]
+  });
+
+  setTimeout(() => {
+    window.updateGlobeFromFlutter(mockData);
+  }, 1000);
 }
